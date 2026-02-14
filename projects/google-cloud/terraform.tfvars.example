@@ -31,6 +31,10 @@ subnet = null
 ## -- Specifies whether a Google Firewall should be created for all resources.
 create_firewall = true
 
+## -- SECURITY: CIDR blocks allowed to access the Harvester host(s) via the created firewall rule.
+##    Best practice: set this to your public IP/32 (and/or corporate CIDRs).
+allowed_cidrs = ["0.0.0.0/0"]
+
 ## -- Specifies whether the instances should be Spot (preemptible) VMs.
 spot_instance = true
 

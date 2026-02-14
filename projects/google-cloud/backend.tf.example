@@ -1,0 +1,8 @@
+terraform {
+  backend "gcs" {
+    # NOTE: do not commit backend.tf with real values to a shared repo.
+    # Copy this file to backend.tf (gitignored) OR use -backend-config (recommended).
+    bucket = "REPLACE_ME"
+    prefix = "harvester-cloud/gcp"
+  }
+}

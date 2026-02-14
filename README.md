@@ -31,6 +31,7 @@ The `projects/` directory combines modules to create different deployment recipe
 - [Harvester cluster deployment process](https://github.com/rancher/harvester-cloud/blob/main/docs/HARVESTER_DEPLOYMENT_PROCESS.md)
 - [Performance analyses](https://github.com/rancher/harvester-cloud/blob/main/docs/PERFORMANCE.md)
 - [Microsoft Azure known issues](https://github.com/rancher/harvester-cloud/blob/main/docs/AZURE_KNOWN_ISSUES.md)
+- GCP deployment (CI-first, opinionated best practices): `docs/gcp/README.md`
 - [How to create a basic Harvester VM and access it via SSH from the local CLI](https://github.com/rancher/harvester-cloud/blob/main/docs/VM_SETUP_AND_SSH_LOGIN.md)
 - [How to create a downstream K8s cluster from Rancher using the Harvester Cloud Provider](https://github.com/rancher/harvester-cloud/blob/main/docs/CREATE_DOWNSTREAM_CLUSTER.md)
 - [How to perform an upgrade in an air-gapped Harvester cluster](https://github.com/rancher/harvester-cloud/blob/main/docs/AIR_GAPPED_UPGRADE_PROCESS.md)

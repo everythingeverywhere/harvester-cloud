@@ -67,7 +67,7 @@ resource "google_compute_firewall" "default" {
     protocol = "tcp"
     ports    = ["8443", "443"]
   }
-  source_ranges = ["0.0.0.0/0"]
+  source_ranges = var.allowed_cidrs
   target_tags   = ["${var.prefix}"]
 }
 

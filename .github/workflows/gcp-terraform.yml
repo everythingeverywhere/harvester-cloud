@@ -1,0 +1,163 @@
+name: GCP Terraform (Harvester Cloud)
+
+on:
+  pull_request:
+    paths:
+      - 'projects/google-cloud/**'
+      - 'modules/google-cloud/**'
+      - 'modules/harvester/**'
+      - '.github/workflows/gcp-terraform.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'projects/google-cloud/**'
+      - 'modules/google-cloud/**'
+      - 'modules/harvester/**'
+      - '.github/workflows/gcp-terraform.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'plan or apply or destroy'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: gcp-terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: plan
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'plan'
+    runs-on: ubuntu-latest
+    environment: gcp-lab
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/google-cloud
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Write terraform.tfvars (optional)
+        if: secrets.TFVARS != ''
+        run: |
+          cat > terraform.tfvars <<'EOF'
+          ${{ secrets.TFVARS }}
+          EOF
+
+      - name: Terraform Init (GCS backend)
+        run: |
+          terraform init -upgrade \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: Terraform Fmt Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -no-color
+
+  apply:
+    name: apply
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    environment: gcp-lab-apply
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/google-cloud
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Write terraform.tfvars (optional)
+        if: secrets.TFVARS != ''
+        run: |
+          cat > terraform.tfvars <<'EOF'
+          ${{ secrets.TFVARS }}
+          EOF
+
+      - name: Terraform Init (GCS backend)
+        run: |
+          terraform init -upgrade \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+  destroy:
+    name: destroy
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment: gcp-lab-apply
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/google-cloud
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Write terraform.tfvars (optional)
+        if: secrets.TFVARS != ''
+        run: |
+          cat > terraform.tfvars <<'EOF'
+          ${{ secrets.TFVARS }}
+          EOF
+
+      - name: Terraform Init (GCS backend)
+        run: |
+          terraform init -upgrade \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve

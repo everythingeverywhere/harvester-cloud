@@ -114,6 +114,7 @@ module "harvester_node" {
   vpc                  = var.vpc
   subnet               = var.subnet
   create_firewall      = var.create_firewall
+  allowed_cidrs         = var.allowed_cidrs
   spot_instance        = var.spot_instance
   os_disk_type         = var.os_disk_type
   os_disk_size         = var.os_disk_size

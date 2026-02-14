@@ -116,6 +116,12 @@ variable "create_firewall" {
   default     = true
 }
 
+variable "allowed_cidrs" {
+  description = "CIDR blocks allowed to access the Harvester host(s) via the created firewall rule. For best practice, set this to your public IP/32 (and/or corporate CIDRs)."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "spot_instance" {
   description = "Specifies whether the instances should be Spot (preemptible) VMs. Default is 'true'."
   type        = bool

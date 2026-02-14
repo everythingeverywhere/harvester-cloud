@@ -102,6 +102,12 @@ variable "create_firewall" {
   default     = true
 }
 
+variable "allowed_cidrs" {
+  description = "List of CIDR blocks allowed to reach the instance via the created firewall rule(s). Default is open (0.0.0.0/0). For best security, set this to your public IP / corporate ranges."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "spot_instance" {
   description = "Specifies whether the instances should be Spot (preemptible) VMs. Default is 'true'."
   type        = bool

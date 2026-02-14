@@ -8,6 +8,8 @@ crash.log
 
 # Files that may contain secrets
 terraform.tfvars
+*.tfbackend
+**/backend.tf
 *kube_config.yml*
 *-ssh_private_key.pem*
 *-ssh_public_key.pem*
