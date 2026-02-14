@@ -75,13 +75,15 @@ Deliverables:
 - Added docs: CI (OIDC/WIF), IAM guidance.
 - Added `allowed_cidrs` variable wired into firewall.
 - Rewrote `docs/gcp/README.md` to be CI-first and step-by-step.
+- Began Phase 1 platform work: added `platform/headscale-gcp/` Terraform stack (VM + static IP + HTTPS via Caddy/Let’s Encrypt + optional Cloud DNS record).
 
 ## Next tasks (ordered)
 
 1) Fix/verify GitHub Actions workflow correctness (YAML, steps, versions).
 2) Add platform stack for Headscale (Terraform):
-   - VM + firewall + static IP + DNS + TLS (Let’s Encrypt)
-   - outputs: URL, admin key/secrets handling plan
+   - VM + firewall + static IP + optional Cloud DNS record + TLS (Let’s Encrypt via Caddy)
+   - outputs: URL, IP
+   - document first-time admin steps (create user + preauth key)
 3) Add lab workflows:
    - request-lab with lab_id + backend prefix
    - destroy-lab
