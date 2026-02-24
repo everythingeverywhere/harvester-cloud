@@ -49,8 +49,13 @@ on:
           - standard
           - heavy
       allowed_cidrs:
-        description: "Comma-separated CIDRs allowed to reach SSH/UI (e.g. 203.0.113.4/32). Avoid 0.0.0.0/0."
+        description: "Comma-separated CIDRs allowed to reach SSH/UI (e.g. 203.0.113.4/32). Avoid 0.0.0.0/0 unless you explicitly allow it."
         required: false
+        type: string
+      allow_open_ingress:
+        description: "Set true to allow 0.0.0.0/0 in allowed_cidrs (strongly discouraged)."
+        required: false
+        default: "false"
         type: string
 
 permissions:
@@ -141,6 +146,20 @@ jobs:
           echo "---- terraform.tfvars ----"
           cat terraform.tfvars
 
+      - name: Guardrail: block open ingress unless explicitly allowed
+        if: github.event.inputs.action != 'extend'
+        run: |
+          set -euo pipefail
+          allow_open="${{ github.event.inputs.allow_open_ingress }}"
+          if grep -q '0\.0\.0\.0/0' terraform.tfvars; then
+            if [[ "${allow_open}" != "true" ]]; then
+              echo "ERROR: terraform.tfvars contains 0.0.0.0/0 but allow_open_ingress != true" >&2
+              echo "Refusing to proceed. Provide a narrower allowed_cidrs (best practice: your_public_ip/32)." >&2
+              exit 1
+            fi
+            echo "WARNING: open ingress allowed because allow_open_ingress=true"
+          fi
+
       - name: Terraform Init (GCS backend, per-lab)
         if: github.event.inputs.action != 'extend'
         run: |
@@ -148,16 +167,23 @@ jobs:
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="prefix=${{ steps.cfg.outputs.state_prefix }}"
 
-      - name: Write lab metadata (create)
+      - name: Write lab metadata + persist terraform.tfvars (create)
         if: github.event.inputs.action == 'create'
         run: |
+          set -euo pipefail
           export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
           export TF_STATE_PREFIX="${{ vars.TF_STATE_PREFIX }}"
+
           ../../scripts/gcp/lab_meta.sh write \
             --lab-id "${{ github.event.inputs.lab_id }}" \
             --owner "${{ github.event.inputs.owner }}" \
             --ttl-hours "${{ github.event.inputs.ttl_hours }}" \
             --notes "created via GitHub Actions"
+
+          # Persist tfvars next to state for deterministic destroys/reaping.
+          gsutil -q cp terraform.tfvars \
+            "gs://${TF_STATE_BUCKET}/${TF_STATE_PREFIX}/labs/${{ github.event.inputs.lab_id }}/terraform.tfvars"
+          echo "Persisted tfvars to gs://${TF_STATE_BUCKET}/${TF_STATE_PREFIX}/labs/${{ github.event.inputs.lab_id }}/terraform.tfvars"
 
       - name: Extend lab metadata (extend)
         if: github.event.inputs.action == 'extend'

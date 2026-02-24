@@ -1,0 +1,133 @@
+name: GCP Lab Factory Reaper (destroy expired labs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "If true, only prints what would be destroyed"
+        required: true
+        default: "true"
+        type: string
+  schedule:
+    - cron: '17 * * * *' # hourly
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-lab-reaper
+  cancel-in-progress: false
+
+jobs:
+  reaper:
+    runs-on: ubuntu-latest
+    # NOTE: For v1 safety/reliability, prefer running on a self-hosted runner in GCP.
+    # runs-on: [self-hosted, gcp, lab-factory]
+    environment: gcp-lab-apply
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Reap expired labs
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_PREFIX: ${{ vars.TF_STATE_PREFIX }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TF_STATE_BUCKET:-}" || -z "${TF_STATE_PREFIX:-}" ]]; then
+            echo "ERROR: TF_STATE_BUCKET and TF_STATE_PREFIX repo variables are required" >&2
+            exit 1
+          fi
+
+          now_epoch="$(date -u +%s)"
+          echo "Now (epoch): ${now_epoch}"
+
+          # List all lab metadata files
+          mapfile -t metas < <(gsutil ls "gs://${TF_STATE_BUCKET}/${TF_STATE_PREFIX}/labs/*/meta.json" 2>/dev/null || true)
+
+          if [[ ${#metas[@]} -eq 0 ]]; then
+            echo "No labs found (no meta.json objects)."
+            exit 0
+          fi
+
+          echo "Found ${#metas[@]} meta files"
+
+          for meta_gs in "${metas[@]}"; do
+            meta_json="$(gsutil cat "$meta_gs")"
+            lab_id="$(jq -r '.lab_id' <<<"$meta_json")"
+            expires_at="$(jq -r '.expires_at' <<<"$meta_json")"
+            owner="$(jq -r '.owner' <<<"$meta_json")"
+
+            if [[ -z "$lab_id" || "$lab_id" == "null" ]]; then
+              echo "WARN: could not parse lab_id from $meta_gs; skipping" >&2
+              continue
+            fi
+
+            if [[ -z "$expires_at" || "$expires_at" == "null" ]]; then
+              echo "WARN: lab $lab_id missing expires_at; skipping" >&2
+              continue
+            fi
+
+            exp_epoch="$(date -u -d "$expires_at" +%s 2>/dev/null || true)"
+            if [[ -z "$exp_epoch" ]]; then
+              echo "WARN: lab $lab_id has unparseable expires_at=$expires_at; skipping" >&2
+              continue
+            fi
+
+            if (( exp_epoch > now_epoch )); then
+              echo "Keep: $lab_id (owner=$owner) expires_at=$expires_at"
+              continue
+            fi
+
+            echo "EXPIRED: $lab_id (owner=$owner) expires_at=$expires_at"
+
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "DRY_RUN=true; would destroy lab $lab_id"
+              continue
+            fi
+
+            # Download persisted tfvars for deterministic destroy
+            tfvars_gs="gs://${TF_STATE_BUCKET}/${TF_STATE_PREFIX}/labs/${lab_id}/terraform.tfvars"
+            tmpdir="$(mktemp -d)"
+            trap 'rm -rf "$tmpdir"' EXIT
+
+            if ! gsutil -q cp "$tfvars_gs" "$tmpdir/terraform.tfvars"; then
+              echo "ERROR: missing tfvars for $lab_id at $tfvars_gs. Refusing destroy to avoid accidental wrong-target actions." >&2
+              continue
+            fi
+
+            state_prefix="${TF_STATE_PREFIX}/labs/${lab_id}"
+
+            pushd projects/google-cloud >/dev/null
+            cp "$tmpdir/terraform.tfvars" terraform.tfvars
+
+            terraform init -upgrade \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="prefix=${state_prefix}"
+
+            terraform destroy -auto-approve
+            popd >/dev/null
+
+            # Delete metadata to avoid re-processing
+            gsutil -q rm -f "$meta_gs" || true
+            gsutil -q rm -f "$tfvars_gs" || true
+            echo "Destroyed lab $lab_id and removed metadata"
+          done
