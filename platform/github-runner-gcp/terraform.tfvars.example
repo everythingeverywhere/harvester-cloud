@@ -1,0 +1,13 @@
+project_id      = "YOUR_PROJECT_ID"
+region          = "us-central1"
+zone            = "us-central1-a"
+name            = "lab-factory-runner"
+machine_type    = "e2-medium"
+# Repo to register runner against:
+github_repo     = "everythingeverywhere/harvester-cloud"
+# Secret Manager secret name that contains a valid runner registration token:
+github_token_secret_name = "github_runner_token"
+labels = {
+  "app" = "github-runner"
+  "env" = "lab-factory"
+}
