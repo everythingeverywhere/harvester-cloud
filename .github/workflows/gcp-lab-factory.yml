@@ -1,0 +1,188 @@
+name: GCP Lab Factory (Harvester)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: create | extend | destroy
+        required: true
+        default: create
+        type: choice
+        options:
+          - create
+          - extend
+          - destroy
+      lab_id:
+        description: "Unique lab id (used for state + resource prefix), e.g. acme-demo-20260224-1530"
+        required: true
+        type: string
+      owner:
+        description: "Owner email / sales person (metadata only)"
+        required: false
+        type: string
+      ttl_hours:
+        description: "TTL in hours (metadata + future reaper). For extend: new TTL from now."
+        required: false
+        default: "8"
+        type: string
+      project_id:
+        description: "GCP project id"
+        required: true
+        type: string
+      region:
+        description: "GCP region"
+        required: true
+        default: "us-central1"
+        type: string
+      harvester_node_count:
+        description: "1 or 3"
+        required: true
+        default: "1"
+        type: string
+      storage_profile:
+        description: "none|standard|heavy (maps to data_disk_count)"
+        required: true
+        default: "standard"
+        type: choice
+        options:
+          - none
+          - standard
+          - heavy
+      allowed_cidrs:
+        description: "Comma-separated CIDRs allowed to reach SSH/UI (e.g. 203.0.113.4/32). Avoid 0.0.0.0/0."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-lab-${{ github.event.inputs.lab_id }}
+  cancel-in-progress: false
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    # NOTE: For secure CI operation, prefer a self-hosted runner in GCP.
+    # runs-on: [self-hosted, gcp]
+    environment: gcp-lab-apply
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/google-cloud
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Compute per-lab settings
+        id: cfg
+        run: |
+          set -euo pipefail
+
+          lab_id="${{ github.event.inputs.lab_id }}"
+          # state prefix isolation
+          state_prefix="${{ vars.TF_STATE_PREFIX }}/labs/${lab_id}"
+
+          # storage profile -> data_disk_count (must be >= 1)
+          case "${{ github.event.inputs.storage_profile }}" in
+            none)     data_disk_count=1 ;;
+            standard) data_disk_count=2 ;;
+            heavy)    data_disk_count=4 ;;
+            *) echo "unknown storage_profile"; exit 1 ;;
+          esac
+
+          echo "state_prefix=${state_prefix}" >> "$GITHUB_OUTPUT"
+          echo "data_disk_count=${data_disk_count}" >> "$GITHUB_OUTPUT"
+
+      - name: Write terraform.tfvars (generated)
+        if: github.event.inputs.action != 'extend'
+        run: |
+          set -euo pipefail
+
+          # Build tfvars from workflow inputs.
+          # Keep this free of secrets.
+          cat > terraform.tfvars <<EOF
+          prefix               = "${{ github.event.inputs.lab_id }}"
+          project_id           = "${{ github.event.inputs.project_id }}"
+          region               = "${{ github.event.inputs.region }}"
+          harvester_node_count = ${{ github.event.inputs.harvester_node_count }}
+          data_disk_count      = ${{ steps.cfg.outputs.data_disk_count }}
+          spot_instance        = true
+          EOF
+
+          if [[ -n "${{ github.event.inputs.allowed_cidrs }}" ]]; then
+            # Convert comma-separated string to HCL list.
+            IFS=',' read -ra CIDRS <<< "${{ github.event.inputs.allowed_cidrs }}"
+            printf 'allowed_cidrs = [' >> terraform.tfvars
+            first=1
+            for c in "${CIDRS[@]}"; do
+              c="${c// /}"
+              [[ -z "$c" ]] && continue
+              if [[ $first -eq 0 ]]; then printf ', ' >> terraform.tfvars; fi
+              printf '"%s"' "$c" >> terraform.tfvars
+              first=0
+            done
+            printf ']\n' >> terraform.tfvars
+          fi
+
+          echo "---- terraform.tfvars ----"
+          cat terraform.tfvars
+
+      - name: Terraform Init (GCS backend, per-lab)
+        if: github.event.inputs.action != 'extend'
+        run: |
+          terraform init -upgrade \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ steps.cfg.outputs.state_prefix }}"
+
+      - name: Write lab metadata (create)
+        if: github.event.inputs.action == 'create'
+        run: |
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export TF_STATE_PREFIX="${{ vars.TF_STATE_PREFIX }}"
+          ../../scripts/gcp/lab_meta.sh write \
+            --lab-id "${{ github.event.inputs.lab_id }}" \
+            --owner "${{ github.event.inputs.owner }}" \
+            --ttl-hours "${{ github.event.inputs.ttl_hours }}" \
+            --notes "created via GitHub Actions"
+
+      - name: Extend lab metadata (extend)
+        if: github.event.inputs.action == 'extend'
+        run: |
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export TF_STATE_PREFIX="${{ vars.TF_STATE_PREFIX }}"
+          ../../scripts/gcp/lab_meta.sh extend \
+            --lab-id "${{ github.event.inputs.lab_id }}" \
+            --ttl-hours "${{ github.event.inputs.ttl_hours }}"
+
+      - name: Terraform Apply (create)
+        if: github.event.inputs.action == 'create'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy (destroy)
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform init -upgrade \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ steps.cfg.outputs.state_prefix }}"
+          terraform destroy -auto-approve
+
+      - name: Delete lab metadata (destroy)
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          export TF_STATE_BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          export TF_STATE_PREFIX="${{ vars.TF_STATE_PREFIX }}"
+          ../../scripts/gcp/lab_meta.sh delete --lab-id "${{ github.event.inputs.lab_id }}"
