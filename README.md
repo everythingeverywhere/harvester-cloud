@@ -1,51 +1,76 @@
 # harvester-cloud
-A project for deploying Harvester on cloud providers instead of bare-metal infrastructure.
 
-## Why?
-To make it easy for anyone to spin up a Harvester environment for labs, testing, and basic PoCs.
+Terraform-based recipes and modules to deploy **Harvester** on public cloud infrastructure (instead of bare metal) for:
 
-:warning: **Not intended for production use.**
+- labs
+- testing
+- sales / SE PoCs
 
-## How the repository is structured
+⚠️ **Not intended for production use.**
 
-```console
+---
+
+## Quick start (GCP)
+
+Two ways to run Harvester on GCP:
+
+1) **Local CLI (fastest to try once):**
+   - `projects/google-cloud/README.md`
+
+2) **CI-first (best practice for repeatability):**
+   - `docs/gcp/README.md`
+   - `docs/gcp/CI.md` (OIDC → Workload Identity Federation)
+   - `docs/gcp/IAM.md`
+
+### Lab Factory (sales PoC automation)
+
+We’re actively building a “Lab Factory” pattern for **self-serve, repeatable, ephemeral** Harvester labs on GCP:
+
+- Plan + progress: `docs/gcp/LAB_FACTORY_PLAN.md`
+- Operator runbook: `docs/gcp/LAB_FACTORY_RUNBOOK.md`
+- Workflow entrypoint (create/extend/destroy): `.github/workflows/gcp-lab-factory.yml`
+
+> Important: the current `projects/google-cloud` recipe uses SSH provisioners. For safe, fully automated CI, v1 should use a **self-hosted GitHub runner in GCP** or we should refactor the recipe to avoid SSH provisioners.
+
+---
+
+## Repository structure
+
+```text
 .
-├── modules/
-│   └── ...
-├── projects/
-│   └── ...
-├── docs/
-│   └── ...
-└── # images/, tests/, LICENSE, etc.
+├── modules/     # reusable building blocks per provider and Harvester ops
+├── projects/    # opinionated “recipes” composed from modules
+├── docs/        # how-to guides and design notes
+├── platform/    # optional always-on platform components (e.g., Headscale)
+└── scripts/     # helper scripts (bootstrap, metadata, etc.)
 ```
 
-The `modules/` directory contains templates for deploying VMs on different cloud providers (Google Cloud, Microsoft Azure, and DigitalOcean), along with all necessary scripts to configure Harvester.
+- `modules/` contains provider modules (GCP/Azure/DO) and Harvester operations modules.
+- `projects/` contains end-to-end recipes like “Harvester on GCP (1 or 3 nodes)”.
 
-The `projects/` directory combines modules to create different deployment recipes based on specific use cases. For example, you can deploy a 3-node Harvester cluster on Google Cloud VMs or, given an existing Harvester cluster, deploy images, networks, and additional VMs.
+---
 
-#### What does the `docs/` folder contain?
+## Key docs
 
-- [Terraform CLI preparatory steps](https://github.com/rancher/harvester-cloud/blob/main/docs/TERRAFORM.md)
-- [OpenTofu CLI preparatory steps](https://github.com/rancher/harvester-cloud/blob/main/docs/OPENTOFU.md)
-- [Infrastructure estimated costs](https://github.com/rancher/harvester-cloud/blob/main/docs/INFRASTRUCTURE_ESTIMATED_COSTS.md)
-- [Harvester cluster deployment process](https://github.com/rancher/harvester-cloud/blob/main/docs/HARVESTER_DEPLOYMENT_PROCESS.md)
-- [Performance analyses](https://github.com/rancher/harvester-cloud/blob/main/docs/PERFORMANCE.md)
-- [Microsoft Azure known issues](https://github.com/rancher/harvester-cloud/blob/main/docs/AZURE_KNOWN_ISSUES.md)
-- GCP deployment (CI-first, opinionated best practices): `docs/gcp/README.md`
-- [How to create a basic Harvester VM and access it via SSH from the local CLI](https://github.com/rancher/harvester-cloud/blob/main/docs/VM_SETUP_AND_SSH_LOGIN.md)
-- [How to create a downstream K8s cluster from Rancher using the Harvester Cloud Provider](https://github.com/rancher/harvester-cloud/blob/main/docs/CREATE_DOWNSTREAM_CLUSTER.md)
-- [How to perform an upgrade in an air-gapped Harvester cluster](https://github.com/rancher/harvester-cloud/blob/main/docs/AIR_GAPPED_UPGRADE_PROCESS.md)
-- [Implement Cross-Cluster Kubernetes Disaster Recovery with Rancher using Harvester (harvester-cloud) as Cloud Provider](https://github.com/rancher/harvester-cloud/blob/main/docs/CROSS_CLUSTER_K8S_DR.md)
-- [How to Configure an iSCSI Disk in a Harvester Cluster](https://github.com/rancher/harvester-cloud/blob/main/docs/ISCS_DISK_SETUP.md)
-- [How to use the certified openSUSE Leap 15.6 image for harvester-cloud](https://github.com/rancher/harvester-cloud/blob/main/docs/KIWI_OS_IMAGE_BUILDER.md)
-- [How to access the Harvester nodes’ serial console through a browser](https://github.com/rancher/harvester-cloud/blob/main/docs/HARVESTER_NODES_SERIAL_CONSOLE.md)
+- Terraform CLI prep: `docs/TERRAFORM.md`
+- OpenTofu CLI prep: `docs/OPENTOFU.md`
+- Estimated costs: `docs/INFRASTRUCTURE_ESTIMATED_COSTS.md`
+- Harvester deployment process: `docs/HARVESTER_DEPLOYMENT_PROCESS.md`
 
-## How to get started with the various projects
+GCP specific:
+- CI-first GCP deployment: `docs/gcp/README.md`
+- CI wiring (OIDC/WIF): `docs/gcp/CI.md`
+- IAM notes: `docs/gcp/IAM.md`
 
-- [Google](https://github.com/rancher/harvester-cloud/blob/main/projects/google-cloud/README.md)
-- [Azure](https://github.com/rancher/harvester-cloud/blob/main/projects/azure/README.md)
-- [DigitalOcean](https://github.com/rancher/harvester-cloud/blob/main/projects/digitalocean/README.md)
-- Harvester Operations:
-  - [Image creation](https://github.com/rancher/harvester-cloud/blob/main/projects/harvester-ops/image-creation/README.md)
-  - [Network creation](https://github.com/rancher/harvester-cloud/blob/main/projects/harvester-ops/network-creation/README.md)
-  - [VM pool creation](https://github.com/rancher/harvester-cloud/blob/main/projects/harvester-ops/vm-pool-creation/README.md)
+---
+
+## Projects (recipes)
+
+- Google Cloud: `projects/google-cloud/README.md`
+- Azure: `projects/azure/README.md`
+- DigitalOcean: `projects/digitalocean/README.md`
+
+Harvester Operations:
+- Image creation: `projects/harvester-ops/image-creation/README.md`
+- Network creation: `projects/harvester-ops/network-creation/README.md`
+- VM pool creation: `projects/harvester-ops/vm-pool-creation/README.md`
